@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>sample.zn — AST</title>
+<style>
+  :root {
+    --bg: #1e1f22;
+    --bg-panel: #202124;
+    --bg-alt: #26272b;
+    --fg: #d4d4d8;
+    --fg-dim: #7a7d85;
+    --border: #34353a;
+    --accent: #ffcc66;
+    --active-line: #3a3d1f;
+    --select-bg: #4d5f2e;
+    --select-ring: #a3c65a;
+
+    --c-root: #8a8f98;
+    --c-container: #6b7280;
+    --c-decl: #4fd1c5;
+    --c-sig: #b794f4;
+    --c-stmt: #63b3ed;
+    --c-expr: #f6ad55;
+    --c-lit: #68d391;
+    --c-node: #a0aec0;
+
+    --tok-kw: #c586c0;
+    --tok-str: #ce9178;
+    --tok-num: #b5cea8;
+    --tok-com: #6a9955;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #ffffff;
+      --bg-panel: #f7f7f8;
+      --bg-alt: #f0f0f2;
+      --fg: #1f2328;
+      --fg-dim: #6e7781;
+      --border: #d8dee4;
+      --accent: #a6650a;
+      --active-line: #fff3c4;
+      --select-bg: #cdeb9e;
+      --select-ring: #6a9a2d;
+
+      --c-root: #57606a;
+      --c-container: #6e7781;
+      --c-decl: #0f8a7d;
+      --c-sig: #7c3fd4;
+      --c-stmt: #1a68c4;
+      --c-expr: #c2650a;
+      --c-lit: #1a7f37;
+      --c-node: #57606a;
+
+      --tok-kw: #9926b3;
+      --tok-str: #a6650a;
+      --tok-num: #1a7f37;
+      --tok-com: #6e7781;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+  }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-panel);
+  }
+  .toolbar .brand { color: var(--accent); font-weight: 600; white-space: nowrap; }
+  .toolbar .file { color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .toolbar input {
+    flex: 0 1 220px;
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font: inherit;
+  }
+  .toolbar button {
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font: inherit;
+    cursor: pointer;
+  }
+  .toolbar button:hover { border-color: var(--accent); }
+  .toolbar .spacer { flex: 1; }
+  .toolbar .count { color: var(--fg-dim); white-space: nowrap; }
+  .toolbar .hint { color: var(--fg-dim); white-space: nowrap; font-size: 11px; }
+
+  .legend { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tag {
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .tag-root { color: var(--c-root); }
+  .tag-container { color: var(--c-container); }
+  .tag-decl { color: var(--c-decl); }
+  .tag-sig { color: var(--c-sig); }
+  .tag-stmt { color: var(--c-stmt); }
+  .tag-expr { color: var(--c-expr); }
+  .tag-lit { color: var(--c-lit); }
+
+  .panes {
+    display: flex;
+    height: calc(100% - 41px);
+  }
+  .source, .tree {
+    overflow: auto;
+    height: 100%;
+  }
+  .source {
+    flex: 0 0 42%;
+    margin: 0;
+    padding: 8px 0;
+    border-right: 1px solid var(--border);
+    background: var(--bg-panel);
+    white-space: pre;
+    line-height: 1.5;
+  }
+  .tree {
+    flex: 1;
+    padding: 10px 12px;
+  }
+
+  .line { display: flex; padding: 0 12px; }
+  .line.active { background: var(--active-line); }
+  .ln {
+    color: var(--fg-dim);
+    width: 3em;
+    flex: none;
+    text-align: right;
+    padding-right: 12px;
+    user-select: none;
+  }
+  .code { white-space: pre; }
+  .tok-kw { color: var(--tok-kw); }
+  .tok-str { color: var(--tok-str); }
+  .tok-num { color: var(--tok-num); }
+  .tok-com { color: var(--tok-com); font-style: italic; }
+  .code .tok:hover { background: var(--bg-alt); border-radius: 2px; cursor: pointer; }
+  .tok.selected {
+    background: var(--select-bg);
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px var(--select-ring);
+  }
+
+  .node { position: relative; }
+  .node-head {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 1px 4px;
+    padding-left: calc(var(--depth, 0) * 16px);
+    border-radius: 3px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .node-head:hover { background: var(--bg-alt); }
+  .node.match > .node-head { background: var(--active-line); }
+  .node.picked > .node-head {
+    background: var(--select-bg);
+    box-shadow: 0 0 0 1px var(--select-ring);
+  }
+  .toggle {
+    color: var(--fg-dim);
+    width: 12px;
+    flex: none;
+    text-align: center;
+    user-select: none;
+  }
+  .node[data-has-children="false"] > .node-head > .toggle { visibility: hidden; }
+  .label { white-space: pre; }
+  .kind-root > .node-head > .label { color: var(--c-root); }
+  .kind-container > .node-head > .label { color: var(--c-container); }
+  .kind-decl > .node-head > .label { color: var(--c-decl); }
+  .kind-sig > .node-head > .label { color: var(--c-sig); font-weight: 600; }
+  .kind-stmt > .node-head > .label { color: var(--c-stmt); }
+  .kind-expr > .node-head > .label { color: var(--c-expr); }
+  .kind-lit > .node-head > .label { color: var(--c-lit); }
+  .kind-node > .node-head > .label { color: var(--c-node); }
+  .linetag {
+    color: var(--fg-dim);
+    font-size: 11px;
+  }
+  .node.collapsed > .children { display: none; }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <span class="brand">jass-rs</span>
+    <span class="file">sample.zn</span>
+    <input id="filter" type="text" placeholder="filter nodes…">
+    <button id="expandAll">Expand all</button>
+    <button id="collapseAll">Collapse all</button>
+    <span class="spacer"></span>
+    <span class="hint">click source ↔ tree to sync</span>
+    <span class="count" id="nodeCount"></span>
+    <span class="legend">
+      <span class="tag tag-sig">sig</span>
+      <span class="tag tag-stmt">stmt</span>
+      <span class="tag tag-expr">expr</span>
+      <span class="tag tag-lit">lit</span>
+      <span class="tag tag-decl">decl</span>
+      <span class="tag tag-container">container</span>
+    </span>
+  </div>
+  <div class="panes">
+    <pre id="source" class="source"><div class="line" id="L1"><span class="ln">1</span><span class="code"><span class="tok tok-com" data-scol="1" data-ecol="9">//! zinc</span></span></div>
+<div class="line" id="L2"><span class="ln">2</span><span class="code"><span class="tok tok-com" data-scol="1" data-ecol="3">/*</span></span></div>
+<div class="line" id="L3"><span class="ln">3</span><span class="code"><span class="tok tok-com" data-scol="1" data-ecol="67"> * A small but representative Zinc library: globals, a struct with</span></span></div>
+<div class="line" id="L4"><span class="ln">4</span><span class="code"><span class="tok tok-com" data-scol="1" data-ecol="66"> * methods and an operator, loops of every kind, and an anonymous</span></span></div>
+<div class="line" id="L5"><span class="ln">5</span><span class="code"><span class="tok tok-com" data-scol="1" data-ecol="19"> * timer callback.</span></span></div>
+<div class="line" id="L6"><span class="ln">6</span><span class="code"><span class="tok tok-com" data-scol="1" data-ecol="4"> */</span></span></div>
+<div class="line" id="L7"><span class="ln">7</span><span class="code"><span class="tok tok-kw" data-scol="1" data-ecol="8">library</span> <span class="tok tok-ident" data-scol="9" data-ecol="17">Counters</span> <span class="tok tok-kw" data-scol="18" data-ecol="26">requires</span> <span class="tok tok-kw" data-scol="27" data-ecol="35">optional</span> <span class="tok tok-ident" data-scol="36" data-ecol="46">TimerUtils</span> <span class="tok tok-punct" data-scol="47" data-ecol="48">{</span></span></div>
+<div class="line" id="L8"><span class="ln">8</span><span class="code">    <span class="tok tok-kw" data-scol="5" data-ecol="13">constant</span> <span class="tok tok-ident" data-scol="14" data-ecol="21">integer</span> <span class="tok tok-ident" data-scol="22" data-ecol="34">MAX_COUNTERS</span> <span class="tok tok-punct" data-scol="35" data-ecol="36">=</span> <span class="tok tok-num" data-scol="37" data-ecol="38">8</span><span class="tok tok-punct" data-scol="38" data-ecol="39">;</span></span></div>
+<div class="line" id="L9"><span class="ln">9</span><span class="code">    <span class="tok tok-ident" data-scol="5" data-ecol="12">integer</span> <span class="tok tok-ident" data-scol="13" data-ecol="21">counters</span><span class="tok tok-punct" data-scol="21" data-ecol="22">[</span><span class="tok tok-ident" data-scol="22" data-ecol="34">MAX_COUNTERS</span><span class="tok tok-punct" data-scol="34" data-ecol="35">]</span><span class="tok tok-punct" data-scol="35" data-ecol="36">;</span></span></div>
+<div class="line" id="L10"><span class="ln">10</span><span class="code">    <span class="tok tok-ident" data-scol="5" data-ecol="9">real</span> <span class="tok tok-ident" data-scol="10" data-ecol="15">ratio</span> <span class="tok tok-punct" data-scol="16" data-ecol="17">=</span> <span class="tok tok-num" data-scol="18" data-ecol="21">0.5</span><span class="tok tok-punct" data-scol="21" data-ecol="22">,</span> <span class="tok tok-ident" data-scol="23" data-ecol="28">scale</span> <span class="tok tok-punct" data-scol="29" data-ecol="30">=</span> <span class="tok tok-num" data-scol="31" data-ecol="34">2.0</span><span class="tok tok-punct" data-scol="34" data-ecol="35">;</span></span></div>
+<div class="line" id="L11"><span class="ln">11</span><span class="code"></span></div>
+<div class="line" id="L12"><span class="ln">12</span><span class="code">    <span class="tok tok-kw" data-scol="5" data-ecol="12">private</span> <span class="tok tok-punct" data-scol="13" data-ecol="14">{</span></span></div>
+<div class="line" id="L13"><span class="ln">13</span><span class="code">        <span class="tok tok-ident" data-scol="9" data-ecol="15">string</span> <span class="tok tok-ident" data-scol="16" data-ecol="20">NAME</span> <span class="tok tok-punct" data-scol="21" data-ecol="22">=</span> <span class="tok tok-str" data-scol="23" data-ecol="33">"Counters"</span><span class="tok tok-punct" data-scol="33" data-ecol="34">;</span></span></div>
+<div class="line" id="L14"><span class="ln">14</span><span class="code">    <span class="tok tok-punct" data-scol="5" data-ecol="6">}</span></span></div>
+<div class="line" id="L15"><span class="ln">15</span><span class="code"></span></div>
+<div class="line" id="L16"><span class="ln">16</span><span class="code">    <span class="tok tok-kw" data-scol="5" data-ecol="11">public</span> <span class="tok tok-kw" data-scol="12" data-ecol="18">struct</span> <span class="tok tok-ident" data-scol="19" data-ecol="26">Counter</span> <span class="tok tok-punct" data-scol="27" data-ecol="28">{</span></span></div>
+<div class="line" id="L17"><span class="ln">17</span><span class="code">        <span class="tok tok-ident" data-scol="9" data-ecol="16">integer</span> <span class="tok tok-ident" data-scol="17" data-ecol="22">value</span> <span class="tok tok-punct" data-scol="23" data-ecol="24">=</span> <span class="tok tok-num" data-scol="25" data-ecol="26">0</span><span class="tok tok-punct" data-scol="26" data-ecol="27">;</span></span></div>
+<div class="line" id="L18"><span class="ln">18</span><span class="code">        <span class="tok tok-kw" data-scol="9" data-ecol="15">static</span> <span class="tok tok-ident" data-scol="16" data-ecol="23">integer</span> <span class="tok tok-ident" data-scol="24" data-ecol="31">created</span> <span class="tok tok-punct" data-scol="32" data-ecol="33">=</span> <span class="tok tok-num" data-scol="34" data-ecol="35">0</span><span class="tok tok-punct" data-scol="35" data-ecol="36">;</span></span></div>
+<div class="line" id="L19"><span class="ln">19</span><span class="code"></span></div>
+<div class="line" id="L20"><span class="ln">20</span><span class="code">        <span class="tok tok-kw" data-scol="9" data-ecol="15">static</span> <span class="tok tok-kw" data-scol="16" data-ecol="22">method</span> <span class="tok tok-ident" data-scol="23" data-ecol="29">create</span><span class="tok tok-punct" data-scol="29" data-ecol="30">(</span><span class="tok tok-ident" data-scol="30" data-ecol="37">integer</span> <span class="tok tok-ident" data-scol="38" data-ecol="43">start</span><span class="tok tok-punct" data-scol="43" data-ecol="44">)</span> <span class="tok tok-punct" data-scol="45" data-ecol="46">-</span><span class="tok tok-punct" data-scol="46" data-ecol="47">&gt;</span> <span class="tok tok-kw" data-scol="48" data-ecol="56">thistype</span> <span class="tok tok-punct" data-scol="57" data-ecol="58">{</span></span></div>
+<div class="line" id="L21"><span class="ln">21</span><span class="code">            <span class="tok tok-kw" data-scol="13" data-ecol="21">thistype</span> <span class="tok tok-ident" data-scol="22" data-ecol="23">c</span> <span class="tok tok-punct" data-scol="24" data-ecol="25">=</span> <span class="tok tok-kw" data-scol="26" data-ecol="34">thistype</span><span class="tok tok-punct" data-scol="34" data-ecol="35">.</span><span class="tok tok-ident" data-scol="35" data-ecol="43">allocate</span><span class="tok tok-punct" data-scol="43" data-ecol="44">(</span><span class="tok tok-punct" data-scol="44" data-ecol="45">)</span><span class="tok tok-punct" data-scol="45" data-ecol="46">;</span></span></div>
+<div class="line" id="L22"><span class="ln">22</span><span class="code">            <span class="tok tok-ident" data-scol="13" data-ecol="14">c</span><span class="tok tok-punct" data-scol="14" data-ecol="15">.</span><span class="tok tok-ident" data-scol="15" data-ecol="20">value</span> <span class="tok tok-punct" data-scol="21" data-ecol="22">=</span> <span class="tok tok-ident" data-scol="23" data-ecol="28">start</span><span class="tok tok-punct" data-scol="28" data-ecol="29">;</span></span></div>
+<div class="line" id="L23"><span class="ln">23</span><span class="code">            <span class="tok tok-kw" data-scol="13" data-ecol="21">thistype</span><span class="tok tok-punct" data-scol="21" data-ecol="22">.</span><span class="tok tok-ident" data-scol="22" data-ecol="29">created</span> <span class="tok tok-punct" data-scol="30" data-ecol="31">+</span><span class="tok tok-punct" data-scol="31" data-ecol="32">=</span> <span class="tok tok-num" data-scol="33" data-ecol="34">1</span><span class="tok tok-punct" data-scol="34" data-ecol="35">;</span></span></div>
+<div class="line" id="L24"><span class="ln">24</span><span class="code">            <span class="tok tok-kw" data-scol="13" data-ecol="19">return</span> <span class="tok tok-ident" data-scol="20" data-ecol="21">c</span><span class="tok tok-punct" data-scol="21" data-ecol="22">;</span></span></div>
+<div class="line" id="L25"><span class="ln">25</span><span class="code">        <span class="tok tok-punct" data-scol="9" data-ecol="10">}</span></span></div>
+<div class="line" id="L26"><span class="ln">26</span><span class="code"></span></div>
+<div class="line" id="L27"><span class="ln">27</span><span class="code">        <span class="tok tok-kw" data-scol="9" data-ecol="15">method</span> <span class="tok tok-kw" data-scol="16" data-ecol="24">operator</span> <span class="tok tok-punct" data-scol="25" data-ecol="26">[</span><span class="tok tok-punct" data-scol="26" data-ecol="27">]</span> <span class="tok tok-punct" data-scol="28" data-ecol="29">(</span><span class="tok tok-ident" data-scol="29" data-ecol="36">integer</span> <span class="tok tok-ident" data-scol="37" data-ecol="38">i</span><span class="tok tok-punct" data-scol="38" data-ecol="39">)</span> <span class="tok tok-punct" data-scol="40" data-ecol="41">-</span><span class="tok tok-punct" data-scol="41" data-ecol="42">&gt;</span> <span class="tok tok-ident" data-scol="43" data-ecol="50">integer</span> <span class="tok tok-punct" data-scol="51" data-ecol="52">{</span></span></div>
+<div class="line" id="L28"><span class="ln">28</span><span class="code">            <span class="tok tok-kw" data-scol="13" data-ecol="19">return</span> <span class="tok tok-ident" data-scol="20" data-ecol="28">counters</span><span class="tok tok-punct" data-scol="28" data-ecol="29">[</span><span class="tok tok-ident" data-scol="29" data-ecol="30">i</span><span class="tok tok-punct" data-scol="30" data-ecol="31">]</span><span class="tok tok-punct" data-scol="31" data-ecol="32">;</span></span></div>
+<div class="line" id="L29"><span class="ln">29</span><span class="code">        <span class="tok tok-punct" data-scol="9" data-ecol="10">}</span></span></div>
+<div class="line" id="L30"><span class="ln">30</span><span class="code"></span></div>
+<div class="line" id="L31"><span class="ln">31</span><span class="code">        <span class="tok tok-kw" data-scol="9" data-ecol="15">method</span> <span class="tok tok-ident" data-scol="16" data-ecol="20">bump</span><span class="tok tok-punct" data-scol="20" data-ecol="21">(</span><span class="tok tok-punct" data-scol="21" data-ecol="22">)</span> <span class="tok tok-punct" data-scol="23" data-ecol="24">{</span></span></div>
+<div class="line" id="L32"><span class="ln">32</span><span class="code">            <span class="tok tok-kw" data-scol="13" data-ecol="17">this</span><span class="tok tok-punct" data-scol="17" data-ecol="18">.</span><span class="tok tok-ident" data-scol="18" data-ecol="23">value</span> <span class="tok tok-punct" data-scol="24" data-ecol="25">+</span><span class="tok tok-punct" data-scol="25" data-ecol="26">=</span> <span class="tok tok-num" data-scol="27" data-ecol="28">1</span><span class="tok tok-punct" data-scol="28" data-ecol="29">;</span></span></div>
+<div class="line" id="L33"><span class="ln">33</span><span class="code">        <span class="tok tok-punct" data-scol="9" data-ecol="10">}</span></span></div>
+<div class="line" id="L34"><span class="ln">34</span><span class="code">    <span class="tok tok-punct" data-scol="5" data-ecol="6">}</span></span></div>
+<div class="line" id="L35"><span class="ln">35</span><span class="code"></span></div>
+<div class="line" id="L36"><span class="ln">36</span><span class="code">    <span class="tok tok-kw" data-scol="5" data-ecol="13">function</span> <span class="tok tok-ident" data-scol="14" data-ecol="20">IsEven</span><span class="tok tok-punct" data-scol="20" data-ecol="21">(</span><span class="tok tok-ident" data-scol="21" data-ecol="28">integer</span> <span class="tok tok-ident" data-scol="29" data-ecol="30">n</span><span class="tok tok-punct" data-scol="30" data-ecol="31">)</span> <span class="tok tok-punct" data-scol="32" data-ecol="33">-</span><span class="tok tok-punct" data-scol="33" data-ecol="34">&gt;</span> <span class="tok tok-ident" data-scol="35" data-ecol="42">boolean</span> <span class="tok tok-punct" data-scol="43" data-ecol="44">{</span></span></div>
+<div class="line" id="L37"><span class="ln">37</span><span class="code">        <span class="tok tok-kw" data-scol="9" data-ecol="15">return</span> <span class="tok tok-ident" data-scol="16" data-ecol="17">n</span> <span class="tok tok-punct" data-scol="18" data-ecol="19">%</span> <span class="tok tok-num" data-scol="20" data-ecol="21">2</span> <span class="tok tok-punct" data-scol="22" data-ecol="23">=</span><span class="tok tok-punct" data-scol="23" data-ecol="24">=</span> <span class="tok tok-num" data-scol="25" data-ecol="26">0</span><span class="tok tok-punct" data-scol="26" data-ecol="27">;</span></span></div>
+<div class="line" id="L38"><span class="ln">38</span><span class="code">    <span class="tok tok-punct" data-scol="5" data-ecol="6">}</span></span></div>
+<div class="line" id="L39"><span class="ln">39</span><span class="code"></span></div>
+<div class="line" id="L40"><span class="ln">40</span><span class="code">    <span class="tok tok-kw" data-scol="5" data-ecol="13">function</span> <span class="tok tok-ident" data-scol="14" data-ecol="25">SumCounters</span><span class="tok tok-punct" data-scol="25" data-ecol="26">(</span><span class="tok tok-punct" data-scol="26" data-ecol="27">)</span> <span class="tok tok-punct" data-scol="28" data-ecol="29">-</span><span class="tok tok-punct" data-scol="29" data-ecol="30">&gt;</span> <span class="tok tok-ident" data-scol="31" data-ecol="38">integer</span> <span class="tok tok-punct" data-scol="39" data-ecol="40">{</span></span></div>
+<div class="line" id="L41"><span class="ln">41</span><span class="code">        <span class="tok tok-ident" data-scol="9" data-ecol="16">integer</span> <span class="tok tok-ident" data-scol="17" data-ecol="18">i</span><span class="tok tok-punct" data-scol="18" data-ecol="19">,</span> <span class="tok tok-ident" data-scol="20" data-ecol="25">total</span> <span class="tok tok-punct" data-scol="26" data-ecol="27">=</span> <span class="tok tok-num" data-scol="28" data-ecol="29">0</span><span class="tok tok-punct" data-scol="29" data-ecol="30">;</span></span></div>
+<div class="line" id="L42"><span class="ln">42</span><span class="code">        <span class="tok tok-kw" data-scol="9" data-ecol="12">for</span> <span class="tok tok-punct" data-scol="13" data-ecol="14">(</span><span class="tok tok-num" data-scol="14" data-ecol="15">0</span> <span class="tok tok-punct" data-scol="16" data-ecol="17">&lt;</span><span class="tok tok-punct" data-scol="17" data-ecol="18">=</span> <span class="tok tok-ident" data-scol="19" data-ecol="20">i</span> <span class="tok tok-punct" data-scol="21" data-ecol="22">&lt;</span> <span class="tok tok-ident" data-scol="23" data-ecol="35">MAX_COUNTERS</span><span class="tok tok-punct" data-scol="35" data-ecol="36">)</span> <span class="tok tok-punct" data-scol="37" data-ecol="38">{</span></span></div>
+<div class="line" id="L43"><span class="ln">43</span><span class="code">            <span class="tok tok-kw" data-scol="13" data-ecol="15">if</span> <span class="tok tok-punct" data-scol="16" data-ecol="17">(</span><span class="tok tok-ident" data-scol="17" data-ecol="23">IsEven</span><span class="tok tok-punct" data-scol="23" data-ecol="24">(</span><span class="tok tok-ident" data-scol="24" data-ecol="25">i</span><span class="tok tok-punct" data-scol="25" data-ecol="26">)</span> <span class="tok tok-punct" data-scol="27" data-ecol="28">&amp;</span><span class="tok tok-punct" data-scol="28" data-ecol="29">&amp;</span> <span class="tok tok-ident" data-scol="30" data-ecol="38">counters</span><span class="tok tok-punct" data-scol="38" data-ecol="39">[</span><span class="tok tok-ident" data-scol="39" data-ecol="40">i</span><span class="tok tok-punct" data-scol="40" data-ecol="41">]</span> <span class="tok tok-punct" data-scol="42" data-ecol="43">!</span><span class="tok tok-punct" data-scol="43" data-ecol="44">=</span> <span class="tok tok-num" data-scol="45" data-ecol="46">0</span><span class="tok tok-punct" data-scol="46" data-ecol="47">)</span> <span class="tok tok-punct" data-scol="48" data-ecol="49">{</span></span></div>
+<div class="line" id="L44"><span class="ln">44</span><span class="code">                <span class="tok tok-ident" data-scol="17" data-ecol="22">total</span> <span class="tok tok-punct" data-scol="23" data-ecol="24">+</span><span class="tok tok-punct" data-scol="24" data-ecol="25">=</span> <span class="tok tok-ident" data-scol="26" data-ecol="34">counters</span><span class="tok tok-punct" data-scol="34" data-ecol="35">[</span><span class="tok tok-ident" data-scol="35" data-ecol="36">i</span><span class="tok tok-punct" data-scol="36" data-ecol="37">]</span><span class="tok tok-punct" data-scol="37" data-ecol="38">;</span></span></div>
+<div class="line" id="L45"><span class="ln">45</span><span class="code">            <span class="tok tok-punct" data-scol="13" data-ecol="14">}</span> <span class="tok tok-kw" data-scol="15" data-ecol="19">else</span> <span class="tok tok-kw" data-scol="20" data-ecol="22">if</span> <span class="tok tok-punct" data-scol="23" data-ecol="24">(</span><span class="tok tok-ident" data-scol="24" data-ecol="25">i</span> <span class="tok tok-punct" data-scol="26" data-ecol="27">&gt;</span> <span class="tok tok-num" data-scol="28" data-ecol="29">6</span><span class="tok tok-punct" data-scol="29" data-ecol="30">)</span> <span class="tok tok-punct" data-scol="31" data-ecol="32">{</span></span></div>
+<div class="line" id="L46"><span class="ln">46</span><span class="code">                <span class="tok tok-kw" data-scol="17" data-ecol="22">break</span><span class="tok tok-punct" data-scol="22" data-ecol="23">;</span></span></div>
+<div class="line" id="L47"><span class="ln">47</span><span class="code">            <span class="tok tok-punct" data-scol="13" data-ecol="14">}</span></span></div>
+<div class="line" id="L48"><span class="ln">48</span><span class="code">        <span class="tok tok-punct" data-scol="9" data-ecol="10">}</span></span></div>
+<div class="line" id="L49"><span class="ln">49</span><span class="code">        <span class="tok tok-kw" data-scol="9" data-ecol="15">return</span> <span class="tok tok-ident" data-scol="16" data-ecol="21">total</span><span class="tok tok-punct" data-scol="21" data-ecol="22">;</span></span></div>
+<div class="line" id="L50"><span class="ln">50</span><span class="code">    <span class="tok tok-punct" data-scol="5" data-ecol="6">}</span></span></div>
+<div class="line" id="L51"><span class="ln">51</span><span class="code"></span></div>
+<div class="line" id="L52"><span class="ln">52</span><span class="code">    <span class="tok tok-kw" data-scol="5" data-ecol="13">function</span> <span class="tok tok-ident" data-scol="14" data-ecol="20">onInit</span><span class="tok tok-punct" data-scol="20" data-ecol="21">(</span><span class="tok tok-punct" data-scol="21" data-ecol="22">)</span> <span class="tok tok-punct" data-scol="23" data-ecol="24">{</span></span></div>
+<div class="line" id="L53"><span class="ln">53</span><span class="code">        <span class="tok tok-ident" data-scol="9" data-ecol="16">integer</span> <span class="tok tok-ident" data-scol="17" data-ecol="18">i</span> <span class="tok tok-punct" data-scol="19" data-ecol="20">=</span> <span class="tok tok-num" data-scol="21" data-ecol="22">0</span><span class="tok tok-punct" data-scol="22" data-ecol="23">;</span></span></div>
+<div class="line" id="L54"><span class="ln">54</span><span class="code">        <span class="tok tok-ident" data-scol="9" data-ecol="16">Counter</span> <span class="tok tok-ident" data-scol="17" data-ecol="18">c</span> <span class="tok tok-punct" data-scol="19" data-ecol="20">=</span> <span class="tok tok-ident" data-scol="21" data-ecol="28">Counter</span><span class="tok tok-punct" data-scol="28" data-ecol="29">.</span><span class="tok tok-ident" data-scol="29" data-ecol="35">create</span><span class="tok tok-punct" data-scol="35" data-ecol="36">(</span><span class="tok tok-str" data-scol="36" data-ecol="42">'hfoo'</span><span class="tok tok-punct" data-scol="42" data-ecol="43">)</span><span class="tok tok-punct" data-scol="43" data-ecol="44">;</span></span></div>
+<div class="line" id="L55"><span class="ln">55</span><span class="code">        <span class="tok tok-kw" data-scol="9" data-ecol="14">while</span> <span class="tok tok-punct" data-scol="15" data-ecol="16">(</span><span class="tok tok-ident" data-scol="16" data-ecol="17">i</span> <span class="tok tok-punct" data-scol="18" data-ecol="19">&lt;</span> <span class="tok tok-ident" data-scol="20" data-ecol="32">MAX_COUNTERS</span><span class="tok tok-punct" data-scol="32" data-ecol="33">)</span> <span class="tok tok-punct" data-scol="34" data-ecol="35">{</span></span></div>
+<div class="line" id="L56"><span class="ln">56</span><span class="code">            <span class="tok tok-ident" data-scol="13" data-ecol="21">counters</span><span class="tok tok-punct" data-scol="21" data-ecol="22">[</span><span class="tok tok-ident" data-scol="22" data-ecol="23">i</span><span class="tok tok-punct" data-scol="23" data-ecol="24">]</span> <span class="tok tok-punct" data-scol="25" data-ecol="26">=</span> <span class="tok tok-punct" data-scol="27" data-ecol="28">-</span><span class="tok tok-ident" data-scol="28" data-ecol="29">i</span> <span class="tok tok-punct" data-scol="30" data-ecol="31">*</span> <span class="tok tok-num" data-scol="32" data-ecol="33">2</span><span class="tok tok-punct" data-scol="33" data-ecol="34">;</span></span></div>
+<div class="line" id="L57"><span class="ln">57</span><span class="code">            <span class="tok tok-ident" data-scol="13" data-ecol="14">i</span> <span class="tok tok-punct" data-scol="15" data-ecol="16">+</span><span class="tok tok-punct" data-scol="16" data-ecol="17">=</span> <span class="tok tok-num" data-scol="18" data-ecol="19">1</span><span class="tok tok-punct" data-scol="19" data-ecol="20">;</span></span></div>
+<div class="line" id="L58"><span class="ln">58</span><span class="code">        <span class="tok tok-punct" data-scol="9" data-ecol="10">}</span></span></div>
+<div class="line" id="L59"><span class="ln">59</span><span class="code">        <span class="tok tok-kw" data-scol="9" data-ecol="11">do</span> <span class="tok tok-punct" data-scol="12" data-ecol="13">{</span></span></div>
+<div class="line" id="L60"><span class="ln">60</span><span class="code">            <span class="tok tok-ident" data-scol="13" data-ecol="14">i</span> <span class="tok tok-punct" data-scol="15" data-ecol="16">-</span><span class="tok tok-punct" data-scol="16" data-ecol="17">=</span> <span class="tok tok-num" data-scol="18" data-ecol="19">1</span><span class="tok tok-punct" data-scol="19" data-ecol="20">;</span></span></div>
+<div class="line" id="L61"><span class="ln">61</span><span class="code">        <span class="tok tok-punct" data-scol="9" data-ecol="10">}</span> <span class="tok tok-kw" data-scol="11" data-ecol="16">while</span> <span class="tok tok-punct" data-scol="17" data-ecol="18">(</span><span class="tok tok-ident" data-scol="18" data-ecol="19">i</span> <span class="tok tok-punct" data-scol="20" data-ecol="21">&gt;</span> <span class="tok tok-num" data-scol="22" data-ecol="23">0</span><span class="tok tok-punct" data-scol="23" data-ecol="24">)</span><span class="tok tok-punct" data-scol="24" data-ecol="25">;</span></span></div>
+<div class="line" id="L62"><span class="ln">62</span><span class="code">        <span class="tok tok-kw" data-scol="9" data-ecol="14">debug</span> <span class="tok tok-ident" data-scol="15" data-ecol="25">BJDebugMsg</span><span class="tok tok-punct" data-scol="25" data-ecol="26">(</span><span class="tok tok-ident" data-scol="26" data-ecol="30">NAME</span> <span class="tok tok-punct" data-scol="31" data-ecol="32">+</span> <span class="tok tok-str" data-scol="33" data-ecol="37">": "</span> <span class="tok tok-punct" data-scol="38" data-ecol="39">+</span> <span class="tok tok-ident" data-scol="40" data-ecol="43">I2S</span><span class="tok tok-punct" data-scol="43" data-ecol="44">(</span><span class="tok tok-ident" data-scol="44" data-ecol="55">SumCounters</span><span class="tok tok-punct" data-scol="55" data-ecol="56">(</span><span class="tok tok-punct" data-scol="56" data-ecol="57">)</span><span class="tok tok-punct" data-scol="57" data-ecol="58">)</span><span class="tok tok-punct" data-scol="58" data-ecol="59">)</span><span class="tok tok-punct" data-scol="59" data-ecol="60">;</span></span></div>
+<div class="line" id="L63"><span class="ln">63</span><span class="code">        <span class="tok tok-ident" data-scol="9" data-ecol="10">c</span><span class="tok tok-punct" data-scol="10" data-ecol="11">.</span><span class="tok tok-ident" data-scol="11" data-ecol="15">bump</span><span class="tok tok-punct" data-scol="15" data-ecol="16">(</span><span class="tok tok-punct" data-scol="16" data-ecol="17">)</span><span class="tok tok-punct" data-scol="17" data-ecol="18">;</span></span></div>
+<div class="line" id="L64"><span class="ln">64</span><span class="code">        <span class="tok tok-ident" data-scol="9" data-ecol="19">TimerStart</span><span class="tok tok-punct" data-scol="19" data-ecol="20">(</span><span class="tok tok-ident" data-scol="20" data-ecol="31">CreateTimer</span><span class="tok tok-punct" data-scol="31" data-ecol="32">(</span><span class="tok tok-punct" data-scol="32" data-ecol="33">)</span><span class="tok tok-punct" data-scol="33" data-ecol="34">,</span> <span class="tok tok-ident" data-scol="35" data-ecol="40">ratio</span> <span class="tok tok-punct" data-scol="41" data-ecol="42">*</span> <span class="tok tok-ident" data-scol="43" data-ecol="48">scale</span><span class="tok tok-punct" data-scol="48" data-ecol="49">,</span> <span class="tok tok-kw" data-scol="50" data-ecol="54">true</span><span class="tok tok-punct" data-scol="54" data-ecol="55">,</span> <span class="tok tok-kw" data-scol="56" data-ecol="64">function</span><span class="tok tok-punct" data-scol="64" data-ecol="65">(</span><span class="tok tok-punct" data-scol="65" data-ecol="66">)</span> <span class="tok tok-punct" data-scol="67" data-ecol="68">{</span></span></div>
+<div class="line" id="L65"><span class="ln">65</span><span class="code">            <span class="tok tok-ident" data-scol="13" data-ecol="25">DestroyTimer</span><span class="tok tok-punct" data-scol="25" data-ecol="26">(</span><span class="tok tok-ident" data-scol="26" data-ecol="41">GetExpiredTimer</span><span class="tok tok-punct" data-scol="41" data-ecol="42">(</span><span class="tok tok-punct" data-scol="42" data-ecol="43">)</span><span class="tok tok-punct" data-scol="43" data-ecol="44">)</span><span class="tok tok-punct" data-scol="44" data-ecol="45">;</span></span></div>
+<div class="line" id="L66"><span class="ln">66</span><span class="code">        <span class="tok tok-punct" data-scol="9" data-ecol="10">}</span><span class="tok tok-punct" data-scol="10" data-ecol="11">)</span><span class="tok tok-punct" data-scol="11" data-ecol="12">;</span></span></div>
+<div class="line" id="L67"><span class="ln">67</span><span class="code">    <span class="tok tok-punct" data-scol="5" data-ecol="6">}</span></span></div>
+<div class="line" id="L68"><span class="ln">68</span><span class="code"><span class="tok tok-punct" data-scol="1" data-ecol="2">}</span></span></div>
+<div class="line" id="L69"><span class="ln">69</span><span class="code"><span class="tok tok-com" data-scol="1" data-ecol="12">//! endzinc</span></span></div>
+</pre>
+    <div id="tree" class="tree"></div>
+  </div>
+  <script id="ast-data" type="application/json">{"label":"Program","kind":"root","line":null,"eline":null,"scol":null,"ecol":null,"children":[{"label":"Library Counters requires optional TimerUtils (line 7)","kind":"decl","line":7,"eline":7,"scol":null,"ecol":null,"children":[{"label":"Global constant integer MAX_COUNTERS (line 8)","kind":"decl","line":8,"eline":8,"scol":null,"ecol":null,"children":[{"label":"Int 8","kind":"lit","line":8,"eline":8,"scol":37,"ecol":38,"children":[]}]},{"label":"Global integer counters[_] (line 9)","kind":"decl","line":9,"eline":9,"scol":null,"ecol":null,"children":[{"label":"Size","kind":"container","line":9,"eline":9,"scol":null,"ecol":null,"children":[{"label":"Var MAX_COUNTERS","kind":"expr","line":9,"eline":9,"scol":22,"ecol":34,"children":[]}]}]},{"label":"Global real ratio (line 10)","kind":"decl","line":10,"eline":10,"scol":null,"ecol":null,"children":[{"label":"Real 0.5","kind":"lit","line":10,"eline":10,"scol":18,"ecol":21,"children":[]}]},{"label":"Global real scale (line 10)","kind":"decl","line":10,"eline":10,"scol":null,"ecol":null,"children":[{"label":"Real 2","kind":"lit","line":10,"eline":10,"scol":31,"ecol":34,"children":[]}]},{"label":"Global private string NAME (line 13)","kind":"decl","line":13,"eline":13,"scol":null,"ecol":null,"children":[{"label":"String \"Counters\"","kind":"lit","line":13,"eline":13,"scol":23,"ecol":33,"children":[]}]},{"label":"Struct public Counter (line 16)","kind":"decl","line":16,"eline":16,"scol":null,"ecol":null,"children":[{"label":"Field integer value (line 17)","kind":"decl","line":17,"eline":17,"scol":null,"ecol":null,"children":[{"label":"Int 0","kind":"lit","line":17,"eline":17,"scol":25,"ecol":26,"children":[]}]},{"label":"Field static integer created (line 18)","kind":"decl","line":18,"eline":18,"scol":null,"ecol":null,"children":[{"label":"Int 0","kind":"lit","line":18,"eline":18,"scol":34,"ecol":35,"children":[]}]},{"label":"Method static create(integer start) -> thistype (line 20)","kind":"sig","line":20,"eline":20,"scol":null,"ecol":null,"children":[{"label":"Local thistype c (line 21)","kind":"stmt","line":21,"eline":21,"scol":null,"ecol":null,"children":[{"label":"Call thistype.allocate","kind":"expr","line":21,"eline":21,"scol":26,"ecol":45,"children":[]}]},{"label":"Assign Assign (line 22)","kind":"stmt","line":22,"eline":22,"scol":null,"ecol":null,"children":[{"label":"Target","kind":"container","line":22,"eline":22,"scol":null,"ecol":null,"children":[{"label":"Member value","kind":"expr","line":22,"eline":22,"scol":13,"ecol":20,"children":[{"label":"Var c","kind":"expr","line":22,"eline":22,"scol":13,"ecol":14,"children":[]}]}]},{"label":"Value","kind":"container","line":22,"eline":22,"scol":null,"ecol":null,"children":[{"label":"Var start","kind":"expr","line":22,"eline":22,"scol":23,"ecol":28,"children":[]}]}]},{"label":"Assign Add (line 23)","kind":"stmt","line":23,"eline":23,"scol":null,"ecol":null,"children":[{"label":"Target","kind":"container","line":23,"eline":23,"scol":null,"ecol":null,"children":[{"label":"Member created","kind":"expr","line":23,"eline":23,"scol":13,"ecol":29,"children":[{"label":"ThisType","kind":"expr","line":23,"eline":23,"scol":13,"ecol":21,"children":[]}]}]},{"label":"Value","kind":"container","line":23,"eline":23,"scol":null,"ecol":null,"children":[{"label":"Int 1","kind":"lit","line":23,"eline":23,"scol":33,"ecol":34,"children":[]}]}]},{"label":"Return (line 24)","kind":"stmt","line":24,"eline":24,"scol":null,"ecol":null,"children":[{"label":"Var c","kind":"expr","line":24,"eline":24,"scol":20,"ecol":21,"children":[]}]}]},{"label":"Method operator [](integer i) -> integer (line 27)","kind":"sig","line":27,"eline":27,"scol":null,"ecol":null,"children":[{"label":"Return (line 28)","kind":"stmt","line":28,"eline":28,"scol":null,"ecol":null,"children":[{"label":"Index","kind":"expr","line":28,"eline":28,"scol":20,"ecol":31,"children":[{"label":"Var counters","kind":"expr","line":28,"eline":28,"scol":20,"ecol":28,"children":[]},{"label":"Var i","kind":"expr","line":28,"eline":28,"scol":29,"ecol":30,"children":[]}]}]}]},{"label":"Method bump() (line 31)","kind":"sig","line":31,"eline":31,"scol":null,"ecol":null,"children":[{"label":"Assign Add (line 32)","kind":"stmt","line":32,"eline":32,"scol":null,"ecol":null,"children":[{"label":"Target","kind":"container","line":32,"eline":32,"scol":null,"ecol":null,"children":[{"label":"Member value","kind":"expr","line":32,"eline":32,"scol":13,"ecol":23,"children":[{"label":"This","kind":"expr","line":32,"eline":32,"scol":13,"ecol":17,"children":[]}]}]},{"label":"Value","kind":"container","line":32,"eline":32,"scol":null,"ecol":null,"children":[{"label":"Int 1","kind":"lit","line":32,"eline":32,"scol":27,"ecol":28,"children":[]}]}]}]}]},{"label":"Function IsEven(integer n) -> boolean (line 36)","kind":"sig","line":36,"eline":36,"scol":null,"ecol":null,"children":[{"label":"Return (line 37)","kind":"stmt","line":37,"eline":37,"scol":null,"ecol":null,"children":[{"label":"Binary Eq","kind":"expr","line":37,"eline":37,"scol":16,"ecol":26,"children":[{"label":"Binary Mod","kind":"expr","line":37,"eline":37,"scol":16,"ecol":21,"children":[{"label":"Var n","kind":"expr","line":37,"eline":37,"scol":16,"ecol":17,"children":[]},{"label":"Int 2","kind":"lit","line":37,"eline":37,"scol":20,"ecol":21,"children":[]}]},{"label":"Int 0","kind":"lit","line":37,"eline":37,"scol":25,"ecol":26,"children":[]}]}]}]},{"label":"Function SumCounters() -> integer (line 40)","kind":"sig","line":40,"eline":40,"scol":null,"ecol":null,"children":[{"label":"Local integer i (line 41)","kind":"stmt","line":41,"eline":41,"scol":null,"ecol":null,"children":[]},{"label":"Local integer total (line 41)","kind":"stmt","line":41,"eline":41,"scol":null,"ecol":null,"children":[{"label":"Int 0","kind":"lit","line":41,"eline":41,"scol":28,"ecol":29,"children":[]}]},{"label":"For i (line 42)","kind":"stmt","line":42,"eline":42,"scol":null,"ecol":null,"children":[{"label":"Start LtEq","kind":"container","line":42,"eline":42,"scol":null,"ecol":null,"children":[{"label":"Int 0","kind":"lit","line":42,"eline":42,"scol":14,"ecol":15,"children":[]}]},{"label":"End Lt","kind":"container","line":42,"eline":42,"scol":null,"ecol":null,"children":[{"label":"Var MAX_COUNTERS","kind":"expr","line":42,"eline":42,"scol":23,"ecol":35,"children":[]}]},{"label":"Body","kind":"container","line":42,"eline":42,"scol":null,"ecol":null,"children":[{"label":"If (line 43)","kind":"stmt","line":43,"eline":43,"scol":null,"ecol":null,"children":[{"label":"Condition","kind":"container","line":43,"eline":43,"scol":null,"ecol":null,"children":[{"label":"Binary And","kind":"expr","line":43,"eline":43,"scol":17,"ecol":46,"children":[{"label":"Call IsEven","kind":"expr","line":43,"eline":43,"scol":17,"ecol":26,"children":[{"label":"Var i","kind":"expr","line":43,"eline":43,"scol":24,"ecol":25,"children":[]}]},{"label":"Binary NotEq","kind":"expr","line":43,"eline":43,"scol":30,"ecol":46,"children":[{"label":"Index","kind":"expr","line":43,"eline":43,"scol":30,"ecol":41,"children":[{"label":"Var counters","kind":"expr","line":43,"eline":43,"scol":30,"ecol":38,"children":[]},{"label":"Var i","kind":"expr","line":43,"eline":43,"scol":39,"ecol":40,"children":[]}]},{"label":"Int 0","kind":"lit","line":43,"eline":43,"scol":45,"ecol":46,"children":[]}]}]}]},{"label":"Then","kind":"container","line":43,"eline":43,"scol":null,"ecol":null,"children":[{"label":"Assign Add (line 44)","kind":"stmt","line":44,"eline":44,"scol":null,"ecol":null,"children":[{"label":"Target","kind":"container","line":44,"eline":44,"scol":null,"ecol":null,"children":[{"label":"Var total","kind":"expr","line":44,"eline":44,"scol":17,"ecol":22,"children":[]}]},{"label":"Value","kind":"container","line":44,"eline":44,"scol":null,"ecol":null,"children":[{"label":"Index","kind":"expr","line":44,"eline":44,"scol":26,"ecol":37,"children":[{"label":"Var counters","kind":"expr","line":44,"eline":44,"scol":26,"ecol":34,"children":[]},{"label":"Var i","kind":"expr","line":44,"eline":44,"scol":35,"ecol":36,"children":[]}]}]}]}]},{"label":"Else","kind":"container","line":43,"eline":43,"scol":null,"ecol":null,"children":[{"label":"If (line 45)","kind":"stmt","line":45,"eline":45,"scol":null,"ecol":null,"children":[{"label":"Condition","kind":"container","line":45,"eline":45,"scol":null,"ecol":null,"children":[{"label":"Binary Gt","kind":"expr","line":45,"eline":45,"scol":24,"ecol":29,"children":[{"label":"Var i","kind":"expr","line":45,"eline":45,"scol":24,"ecol":25,"children":[]},{"label":"Int 6","kind":"lit","line":45,"eline":45,"scol":28,"ecol":29,"children":[]}]}]},{"label":"Then","kind":"container","line":45,"eline":45,"scol":null,"ecol":null,"children":[{"label":"Break (line 46)","kind":"stmt","line":46,"eline":46,"scol":null,"ecol":null,"children":[]}]}]}]}]}]}]},{"label":"Return (line 49)","kind":"stmt","line":49,"eline":49,"scol":null,"ecol":null,"children":[{"label":"Var total","kind":"expr","line":49,"eline":49,"scol":16,"ecol":21,"children":[]}]}]},{"label":"Function onInit() (line 52)","kind":"sig","line":52,"eline":52,"scol":null,"ecol":null,"children":[{"label":"Local integer i (line 53)","kind":"stmt","line":53,"eline":53,"scol":null,"ecol":null,"children":[{"label":"Int 0","kind":"lit","line":53,"eline":53,"scol":21,"ecol":22,"children":[]}]},{"label":"Local Counter c (line 54)","kind":"stmt","line":54,"eline":54,"scol":null,"ecol":null,"children":[{"label":"Call Counter.create","kind":"expr","line":54,"eline":54,"scol":21,"ecol":43,"children":[{"label":"Int 1751543663","kind":"lit","line":54,"eline":54,"scol":36,"ecol":42,"children":[]}]}]},{"label":"While (line 55)","kind":"stmt","line":55,"eline":55,"scol":null,"ecol":null,"children":[{"label":"Condition","kind":"container","line":55,"eline":55,"scol":null,"ecol":null,"children":[{"label":"Binary Lt","kind":"expr","line":55,"eline":55,"scol":16,"ecol":32,"children":[{"label":"Var i","kind":"expr","line":55,"eline":55,"scol":16,"ecol":17,"children":[]},{"label":"Var MAX_COUNTERS","kind":"expr","line":55,"eline":55,"scol":20,"ecol":32,"children":[]}]}]},{"label":"Body","kind":"container","line":55,"eline":55,"scol":null,"ecol":null,"children":[{"label":"Assign Assign (line 56)","kind":"stmt","line":56,"eline":56,"scol":null,"ecol":null,"children":[{"label":"Target","kind":"container","line":56,"eline":56,"scol":null,"ecol":null,"children":[{"label":"Index","kind":"expr","line":56,"eline":56,"scol":13,"ecol":24,"children":[{"label":"Var counters","kind":"expr","line":56,"eline":56,"scol":13,"ecol":21,"children":[]},{"label":"Var i","kind":"expr","line":56,"eline":56,"scol":22,"ecol":23,"children":[]}]}]},{"label":"Value","kind":"container","line":56,"eline":56,"scol":null,"ecol":null,"children":[{"label":"Binary Mul","kind":"expr","line":56,"eline":56,"scol":27,"ecol":33,"children":[{"label":"Unary Neg","kind":"expr","line":56,"eline":56,"scol":27,"ecol":29,"children":[{"label":"Var i","kind":"expr","line":56,"eline":56,"scol":28,"ecol":29,"children":[]}]},{"label":"Int 2","kind":"lit","line":56,"eline":56,"scol":32,"ecol":33,"children":[]}]}]}]},{"label":"Assign Add (line 57)","kind":"stmt","line":57,"eline":57,"scol":null,"ecol":null,"children":[{"label":"Target","kind":"container","line":57,"eline":57,"scol":null,"ecol":null,"children":[{"label":"Var i","kind":"expr","line":57,"eline":57,"scol":13,"ecol":14,"children":[]}]},{"label":"Value","kind":"container","line":57,"eline":57,"scol":null,"ecol":null,"children":[{"label":"Int 1","kind":"lit","line":57,"eline":57,"scol":18,"ecol":19,"children":[]}]}]}]}]},{"label":"DoWhile (line 59)","kind":"stmt","line":59,"eline":59,"scol":null,"ecol":null,"children":[{"label":"Body","kind":"container","line":59,"eline":59,"scol":null,"ecol":null,"children":[{"label":"Assign Sub (line 60)","kind":"stmt","line":60,"eline":60,"scol":null,"ecol":null,"children":[{"label":"Target","kind":"container","line":60,"eline":60,"scol":null,"ecol":null,"children":[{"label":"Var i","kind":"expr","line":60,"eline":60,"scol":13,"ecol":14,"children":[]}]},{"label":"Value","kind":"container","line":60,"eline":60,"scol":null,"ecol":null,"children":[{"label":"Int 1","kind":"lit","line":60,"eline":60,"scol":18,"ecol":19,"children":[]}]}]}]},{"label":"Condition","kind":"container","line":59,"eline":59,"scol":null,"ecol":null,"children":[{"label":"Binary Gt","kind":"expr","line":61,"eline":61,"scol":18,"ecol":23,"children":[{"label":"Var i","kind":"expr","line":61,"eline":61,"scol":18,"ecol":19,"children":[]},{"label":"Int 0","kind":"lit","line":61,"eline":61,"scol":22,"ecol":23,"children":[]}]}]}]},{"label":"Debug (line 62)","kind":"stmt","line":62,"eline":62,"scol":null,"ecol":null,"children":[{"label":"Expr (line 62)","kind":"stmt","line":62,"eline":62,"scol":null,"ecol":null,"children":[{"label":"Call BJDebugMsg","kind":"expr","line":62,"eline":62,"scol":15,"ecol":59,"children":[{"label":"Binary Add","kind":"expr","line":62,"eline":62,"scol":26,"ecol":58,"children":[{"label":"Binary Add","kind":"expr","line":62,"eline":62,"scol":26,"ecol":37,"children":[{"label":"Var NAME","kind":"expr","line":62,"eline":62,"scol":26,"ecol":30,"children":[]},{"label":"String \": \"","kind":"lit","line":62,"eline":62,"scol":33,"ecol":37,"children":[]}]},{"label":"Call I2S","kind":"expr","line":62,"eline":62,"scol":40,"ecol":58,"children":[{"label":"Call SumCounters","kind":"expr","line":62,"eline":62,"scol":44,"ecol":57,"children":[]}]}]}]}]}]},{"label":"Expr (line 63)","kind":"stmt","line":63,"eline":63,"scol":null,"ecol":null,"children":[{"label":"Call c.bump","kind":"expr","line":63,"eline":63,"scol":9,"ecol":17,"children":[]}]},{"label":"Expr (line 64)","kind":"stmt","line":64,"eline":64,"scol":null,"ecol":null,"children":[{"label":"Call TimerStart","kind":"expr","line":64,"eline":66,"scol":9,"ecol":11,"children":[{"label":"Call CreateTimer","kind":"expr","line":64,"eline":64,"scol":20,"ecol":33,"children":[]},{"label":"Binary Mul","kind":"expr","line":64,"eline":64,"scol":35,"ecol":48,"children":[{"label":"Var ratio","kind":"expr","line":64,"eline":64,"scol":35,"ecol":40,"children":[]},{"label":"Var scale","kind":"expr","line":64,"eline":64,"scol":43,"ecol":48,"children":[]}]},{"label":"Bool true","kind":"lit","line":64,"eline":64,"scol":50,"ecol":54,"children":[]},{"label":"AnonFunction () (line 64)","kind":"sig","line":64,"eline":66,"scol":56,"ecol":10,"children":[{"label":"Expr (line 65)","kind":"stmt","line":65,"eline":65,"scol":null,"ecol":null,"children":[{"label":"Call DestroyTimer","kind":"expr","line":65,"eline":65,"scol":13,"ecol":44,"children":[{"label":"Call GetExpiredTimer","kind":"expr","line":65,"eline":65,"scol":26,"ecol":43,"children":[]}]}]}]}]}]}]}]}]}</script>
+  <script>
+  (function () {
+    "use strict";
+    var data = JSON.parse(document.getElementById("ast-data").textContent);
+    var treeEl = document.getElementById("tree");
+    var sourceEl = document.getElementById("source");
+
+    function countNodes(n) {
+      var total = 1;
+      for (var i = 0; i < n.children.length; i++) total += countNodes(n.children[i]);
+      return total;
+    }
+    document.getElementById("nodeCount").textContent = countNodes(data) + " nodes";
+
+    // ---- tree <- source: build DOM rows, remember node -> row on the node
+    // itself (plain object identity is stable for the page's lifetime) ----
+
+    function build(node, depth) {
+      var row = document.createElement("div");
+      row.className = "node kind-" + node.kind;
+      row.style.setProperty("--depth", depth);
+      var hasChildren = node.children && node.children.length > 0;
+      row.setAttribute("data-has-children", hasChildren ? "true" : "false");
+      node.__el = row;
+
+      var head = document.createElement("div");
+      head.className = "node-head";
+
+      var toggle = document.createElement("span");
+      toggle.className = "toggle";
+      toggle.textContent = "▾";
+      head.appendChild(toggle);
+
+      var label = document.createElement("span");
+      label.className = "label";
+      label.textContent = node.label;
+      head.appendChild(label);
+
+      if (node.line !== null) {
+        var lineTag = document.createElement("span");
+        lineTag.className = "linetag";
+        lineTag.textContent = node.eline && node.eline !== node.line
+          ? "L" + node.line + "-" + node.eline
+          : "L" + node.line;
+        head.appendChild(lineTag);
+      }
+
+      row.appendChild(head);
+
+      head.addEventListener("click", function (e) {
+        if (e.target === toggle && hasChildren) {
+          row.classList.toggle("collapsed");
+          toggle.textContent = row.classList.contains("collapsed") ? "▸" : "▾";
+          return;
+        }
+        pickTreeNode(node);
+        highlightSpan(node);
+      });
+
+      if (hasChildren) {
+        var kids = document.createElement("div");
+        kids.className = "children";
+        for (var i = 0; i < node.children.length; i++) {
+          kids.appendChild(build(node.children[i], depth + 1));
+        }
+        row.appendChild(kids);
+      }
+
+      return row;
+    }
+
+    treeEl.appendChild(build(data, 0));
+
+    function clearTreePick() {
+      document.querySelectorAll(".node.picked").forEach(function (n) {
+        n.classList.remove("picked");
+      });
+    }
+
+    function pickTreeNode(node) {
+      clearTreePick();
+      if (!node || !node.__el) return;
+      node.__el.classList.add("picked");
+      var p = node.__el.parentElement;
+      while (p) {
+        if (p.classList && p.classList.contains("node")) {
+          p.classList.remove("collapsed");
+          var t = p.querySelector(":scope > .node-head > .toggle");
+          if (t) t.textContent = "▾";
+        }
+        p = p.parentElement;
+      }
+      node.__el.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+
+    // ---- source highlighting: whole line (coarse, for statements) plus
+    // exact token-range selection (precise, for expressions) ----
+
+    function clearSourceHighlight() {
+      document.querySelectorAll(".line.active").forEach(function (el) {
+        el.classList.remove("active");
+      });
+      document.querySelectorAll(".tok.selected").forEach(function (el) {
+        el.classList.remove("selected");
+      });
+    }
+
+    function highlightSpan(node) {
+      clearSourceHighlight();
+      if (node.line === null) return;
+      var eline = node.eline === null ? node.line : node.eline;
+      for (var ln = node.line; ln <= eline; ln++) {
+        var lineEl = document.getElementById("L" + ln);
+        if (lineEl) lineEl.classList.add("active");
+      }
+      if (node.scol !== null && node.line === eline) {
+        var lineEl2 = document.getElementById("L" + node.line);
+        if (lineEl2) {
+          lineEl2.querySelectorAll(".tok").forEach(function (tok) {
+            var s = parseInt(tok.getAttribute("data-scol"), 10);
+            var e = parseInt(tok.getAttribute("data-ecol"), 10);
+            if (s >= node.scol && e <= node.ecol) tok.classList.add("selected");
+          });
+        }
+      }
+      var primary = document.getElementById("L" + node.line);
+      if (primary) primary.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+
+    // ---- tree <- source: map a clicked/selected source token back to the
+    // deepest AST node whose span contains it ----
+
+    function tokenPosition(node) {
+      var el = node.nodeType === 1 ? node : node.parentElement;
+      var tok = el ? el.closest(".tok") : null;
+      if (!tok) return null;
+      var lineEl = tok.closest(".line");
+      if (!lineEl) return null;
+      return {
+        line: parseInt(lineEl.id.slice(1), 10),
+        scol: parseInt(tok.getAttribute("data-scol"), 10),
+        ecol: parseInt(tok.getAttribute("data-ecol"), 10),
+      };
+    }
+
+    function containsQuery(node, line, scol, ecol) {
+      if (node.line === null) return false;
+      var eline = node.eline === null ? node.line : node.eline;
+      if (node.scol === null) return line >= node.line && line <= eline;
+      if (node.line !== line || eline !== line) return false;
+      return node.scol <= scol && ecol <= node.ecol;
+    }
+
+    function findDeepest(node, line, scol, ecol) {
+      // Recurse into children first, even if `node` itself has no span
+      // (e.g. the Program root, or a pseudo-grouping node like "Then") —
+      // otherwise a spanless ancestor would block the search from ever
+      // reaching the real, spanned descendants underneath it.
+      for (var i = 0; i < node.children.length; i++) {
+        var hit = findDeepest(node.children[i], line, scol, ecol);
+        if (hit) return hit;
+      }
+      return containsQuery(node, line, scol, ecol) ? node : null;
+    }
+
+    sourceEl.addEventListener("mouseup", function () {
+      var sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0 || !sel.anchorNode) return;
+      if (!sourceEl.contains(sel.anchorNode)) return;
+
+      var from = tokenPosition(sel.anchorNode);
+      if (!from) return;
+      var to = tokenPosition(sel.focusNode) || from;
+      if (to.line < from.line || (to.line === from.line && to.ecol < from.scol)) {
+        var tmp = from;
+        from = to;
+        to = tmp;
+      }
+      if (from.line !== to.line) return; // multi-line selections: not supported yet
+
+      var hit = findDeepest(data, from.line, from.scol, to.ecol);
+      if (hit) {
+        pickTreeNode(hit);
+        highlightSpan(hit);
+      }
+    });
+
+    // ---- toolbar controls ----
+
+    document.getElementById("expandAll").addEventListener("click", function () {
+      document.querySelectorAll(".node.collapsed").forEach(function (n) {
+        n.classList.remove("collapsed");
+        var t = n.querySelector(":scope > .node-head > .toggle");
+        if (t) t.textContent = "▾";
+      });
+    });
+
+    document.getElementById("collapseAll").addEventListener("click", function () {
+      document.querySelectorAll('.node[data-has-children="true"]').forEach(function (n) {
+        n.classList.add("collapsed");
+        var t = n.querySelector(":scope > .node-head > .toggle");
+        if (t) t.textContent = "▸";
+      });
+    });
+
+    document.getElementById("filter").addEventListener("input", function (e) {
+      var q = e.target.value.trim().toLowerCase();
+      document.querySelectorAll(".node.match").forEach(function (n) {
+        n.classList.remove("match");
+      });
+      if (!q) return;
+      document.querySelectorAll(".node").forEach(function (n) {
+        var label = n.querySelector(":scope > .node-head > .label");
+        if (label && label.textContent.toLowerCase().indexOf(q) !== -1) {
+          n.classList.add("match");
+          var p = n.parentElement;
+          while (p) {
+            if (p.classList && p.classList.contains("node")) {
+              p.classList.remove("collapsed");
+              var t = p.querySelector(":scope > .node-head > .toggle");
+              if (t) t.textContent = "▾";
+            }
+            p = p.parentElement;
+          }
+        }
+      });
+    });
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+//! zinc
+/*
+ * A small but representative Zinc library: globals, a struct with
+ * methods and an operator, loops of every kind, and an anonymous
+ * timer callback.
+ */
+library Counters requires optional TimerUtils {
+    constant integer MAX_COUNTERS = 8;
+    integer counters[MAX_COUNTERS];
+    real ratio = 0.5, scale = 2.0;
+
+    private {
+        string NAME = "Counters";
+    }
+
+    public struct Counter {
+        integer value = 0;
+        static integer created = 0;
+
+        static method create(integer start) -> thistype {
+            thistype c = thistype.allocate();
+            c.value = start;
+            thistype.created += 1;
+            return c;
+        }
+
+        method operator [] (integer i) -> integer {
+            return counters[i];
+        }
+
+        method bump() {
+            this.value += 1;
+        }
+    }
+
+    function IsEven(integer n) -> boolean {
+        return n % 2 == 0;
+    }
+
+    function SumCounters() -> integer {
+        integer i, total = 0;
+        for (0 <= i < MAX_COUNTERS) {
+            if (IsEven(i) && counters[i] != 0) {
+                total += counters[i];
+            } else if (i > 6) {
+                break;
+            }
+        }
+        return total;
+    }
+
+    function onInit() {
+        integer i = 0;
+        Counter c = Counter.create('hfoo');
+        while (i < MAX_COUNTERS) {
+            counters[i] = -i * 2;
+            i += 1;
+        }
+        do {
+            i -= 1;
+        } while (i > 0);
+        debug BJDebugMsg(NAME + ": " + I2S(SumCounters()));
+        c.bump();
+        TimerStart(CreateTimer(), ratio * scale, true, function() {
+            DestroyTimer(GetExpiredTimer());
+        });
+    }
+}
+//! endzinc

@@ -1,0 +1,17 @@
+[package]
+name = "zinc-rs"
+version = "0.1.0"
+edition = "2024"
+description = "A custom parser and linter for Zinc (the vJASS-embedded, C-like Warcraft III scripting dialect)"
+license = "CC0-1.0"
+
+[[bin]]
+name = "zinc-rs"
+path = "src/main.rs"
+
+[lib]
+name = "zinc_rs"
+path = "src/lib.rs"
+
+[dependencies]
+parser-rs = { path = "../parser-rs" }
