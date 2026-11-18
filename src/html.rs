@@ -1,11 +1,11 @@
 use crate::ast::Program;
+use crate::lexer::SPEC;
 use crate::printer::build_tree;
-use crate::token::{Keyword, Kw};
 use parser_rs::HtmlLang;
 
 /// Zinc's flavor of the shared viewer: its keyword set, plus `/* */`.
 pub const HTML_LANG: HtmlLang = HtmlLang {
-    is_keyword: |word| Kw::from_word(word).is_some(),
+    is_keyword: |word| SPEC.keywords.lookup(word).is_some(),
     block_comments: true,
 };
 

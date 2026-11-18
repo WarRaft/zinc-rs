@@ -13,7 +13,7 @@ use std::collections::HashSet;
 
 use crate::lexer::SPEC;
 use crate::token::{Kw, Punct, Token, TokenKind};
-use parser_rs::semantic::{self, comment_tokens, lexical_type};
+use parser_rs::semantic::{self, comment_tokens_at, lexical_type};
 use parser_rs::{Modifiers, SemanticModifier as M, SemanticToken, SemanticType as T};
 
 /// The built-in primitive types (highlighted as `type.defaultLibrary`).
@@ -21,8 +21,15 @@ const PRIMITIVES: &[&str] = &["integer", "real", "boolean", "string", "handle", 
 
 /// Every semantic token in `src`, unencoded.
 pub fn semantic_tokens(src: &str) -> Vec<SemanticToken> {
-    let lexed = parser_rs::tokenize_lossy::<Kw>(src, &SPEC);
-    let mut out = comment_tokens(&lexed.comments, src);
+    semantic_tokens_at(src, 1)
+}
+
+/// [`semantic_tokens`] for Zinc embedded in a larger file, starting on
+/// file line `first_line`: the tokens come out file-absolute, ready to
+/// merge with the host file's own.
+pub fn semantic_tokens_at(src: &str, first_line: usize) -> Vec<SemanticToken> {
+    let lexed = parser_rs::tokenize_lossy_at(src, &SPEC, first_line);
+    let mut out = comment_tokens_at(&lexed.comments, src, first_line);
     Classifier::new(&lexed.tokens).run(&mut out);
     out
 }

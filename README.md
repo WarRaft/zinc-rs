@@ -10,6 +10,9 @@ the HTML AST viewer.
 - [Parser status](#parser-status) — what `zinc-rs` handles today
 - [CLI](#cli) · [Tests](#tests)
 
+How the parser is built, and the rules every parser here follows, is in
+the [`parser-rs` README](../parser-rs/README.md#principles).
+
 ---
 
 ## The Zinc language
@@ -221,8 +224,10 @@ Supported: everything in the reference above. The parser:
 
 - treats `//! zinc` / `//! endzinc` as ordinary comments, so a `.zn` file
   with or without the markers parses the same;
-- doesn't extract Zinc blocks from `.j` files (that's for a vJASS
-  front end);
+- is also the parser for Zinc **embedded in vJASS** `.j` files. `jass-rs`
+  (`Dialect::VJass`) cuts each block out and calls `zinc_rs::parse_at(src,
+  first_line)` (also `Lexer::tokenize_at`, `semantic_tokens_at`). All
+  positions come back file-absolute;
 - accepts modifiers syntactically but doesn't check where they're allowed
   (e.g. `readonly` on a library global);
 - doesn't yet support `$1F` hex or `1.` / `.5` reals (same as `jass-rs`);

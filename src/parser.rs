@@ -27,7 +27,14 @@ impl Parser {
     }
 
     pub fn parse_str(src: &str) -> PResult<Program> {
-        Parser::new(Lexer::tokenize(src)?).program()
+        Parser::parse_str_at(src, 1)
+    }
+
+    /// Parses a region of a larger file starting on `first_line`. This is
+    /// how a host parser (vJASS) hands a `//! zinc` block over: every span
+    /// and error in the result is file-absolute.
+    pub fn parse_str_at(src: &str, first_line: usize) -> PResult<Program> {
+        Parser::new(Lexer::tokenize_at(src, first_line)?).program()
     }
 
     fn peek_kind(&self) -> &TokenKind {
