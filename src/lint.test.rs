@@ -121,3 +121,14 @@ fn asks_to_move_statements_outside_functions_into_one() {
         ]
     );
 }
+
+#[test]
+fn an_empty_else_is_marked_from_else_and_its_fix_deletes_it() {
+    let src = "function F() {\n    if (G()) { H(); }\n    else {\n    }\n}";
+    let d = lint_src(src).into_iter().find(|d| d.message == "empty 'else' body").expect("reported");
+    assert_eq!(d.span, Some(Span::new(3, 5, 4, 6)));
+    let edit = &d.fix.expect("a fix").edits[0];
+    // From just after the `if` body's `}` to the `else` body's `}`.
+    assert_eq!(edit.span, Span::new(2, 22, 4, 6));
+    assert_eq!(edit.text, "");
+}

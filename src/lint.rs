@@ -2,7 +2,7 @@ use crate::ast::*;
 use std::collections::{HashMap, HashSet};
 
 pub use parser_rs::{Diagnostic, Level};
-use parser_rs::rule;
+use parser_rs::{rule, Fix};
 
 /// Runs every lint rule over a parsed program and returns the diagnostics
 /// found, sorted by source line.
@@ -240,13 +240,21 @@ fn check_stmts<'a>(
                 then_body,
                 else_body,
                 line,
+                else_span,
+                then_end,
                 ..
             } => {
                 if then_body.is_empty() {
                     diags.push(Diagnostic::warning(rule::EMPTY_BRANCH, "empty 'if' body", *line));
                 }
                 if else_body.as_ref().is_some_and(|b| b.is_empty()) {
-                    diags.push(Diagnostic::warning(rule::EMPTY_BRANCH, "empty 'else' body", *line));
+                    let d = Diagnostic::warning(rule::EMPTY_BRANCH, "empty 'else' body", *line);
+                    // Marked from `else` to its `}`; the fix deletes that
+                    // and what's between it and the `if` body.
+                    diags.push(match else_span {
+                        Some(s) => d.at(*s).with_fix(Fix::delete("Remove empty 'else'", Span::new(then_end.end_line, then_end.end_col, s.end_line, s.end_col))),
+                        None => d,
+                    });
                 }
             }
             Stmt::Break { line } if !in_loop => {

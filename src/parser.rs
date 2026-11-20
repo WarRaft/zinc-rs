@@ -571,10 +571,13 @@ impl Parser {
         self.expect(TokenKind::Keyword(Kw::If))?;
         let cond = self.paren_expr()?;
         let then_body = self.body()?;
-        let else_body = if self.eat(&TokenKind::Keyword(Kw::Else)) {
-            Some(self.body()?)
+        let then_end = self.prev_span();
+        let (else_body, else_span) = if self.check(&TokenKind::Keyword(Kw::Else)) {
+            let start = self.ts.peek().span();
+            self.eat(&TokenKind::Keyword(Kw::Else));
+            (Some(self.body()?), Some(start.join(self.prev_span())))
         } else {
-            None
+            (None, None)
         };
         Ok(Stmt::If {
             is_static,
@@ -582,6 +585,8 @@ impl Parser {
             then_body,
             else_body,
             line,
+            else_span,
+            then_end,
         })
     }
 

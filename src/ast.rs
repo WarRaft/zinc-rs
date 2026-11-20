@@ -183,6 +183,10 @@ pub enum Stmt {
         /// `else if` is an `else` whose body is a single nested `If`.
         else_body: Option<Vec<Stmt>>,
         line: usize,
+        /// From `else` to the end of its body, when there's an `else`.
+        else_span: Option<Span>,
+        /// The last token of the `if` body (its `}` or `;`).
+        then_end: Span,
     },
     While {
         cond: Expr,
