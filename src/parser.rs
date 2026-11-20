@@ -88,12 +88,43 @@ impl Parser {
 
     // ----- declarations -------------------------------------------------
 
+    /// Libraries, global-scope declarations and misplaced statements, in
+    /// any order.
     pub fn program(&mut self) -> PResult<Program> {
-        let mut libraries = Vec::new();
+        let mut program = Program::default();
         while !self.ts.at_eof() {
-            libraries.push(self.library()?);
+            if self.check(&TokenKind::Keyword(Kw::Library)) {
+                program.libraries.push(self.library()?);
+            } else if self.at_member() {
+                self.member(Access::Default, Self::library_member, &mut program.globals)?;
+            } else {
+                self.stmt(&mut program.stmts)?;
+            }
         }
-        Ok(Program { libraries })
+        Ok(program)
+    }
+
+    /// Whether the next tokens start a library-level declaration, rather
+    /// than a statement.
+    fn at_member(&self) -> bool {
+        match self.peek_kind() {
+            TokenKind::Keyword(Kw::Static) => self.ts.nth_kind(1) != &TokenKind::Keyword(Kw::If),
+            TokenKind::Keyword(
+                Kw::Private
+                | Kw::Public
+                | Kw::Constant
+                | Kw::Readonly
+                | Kw::Delegate
+                | Kw::Stub
+                | Kw::Optional
+                | Kw::Function
+                | Kw::Struct
+                | Kw::Interface
+                | Kw::Module
+                | Kw::Type,
+            ) => true,
+            _ => self.at_var_decl(),
+        }
     }
 
     fn library(&mut self) -> PResult<Library> {
@@ -149,22 +180,33 @@ impl Parser {
             if self.ts.at_eof() {
                 return Err(self.error("unexpected end of file, expected '}'"));
             }
-            let group_access = match (self.peek_kind(), self.ts.nth_kind(1)) {
-                (TokenKind::Keyword(Kw::Private), TokenKind::Punct(Punct::LBrace)) => Some(Access::Private),
-                (TokenKind::Keyword(Kw::Public), TokenKind::Punct(Punct::LBrace)) => Some(Access::Public),
-                _ => None,
-            };
-            if let Some(group_access) = group_access {
-                self.ts.advance();
-                self.ts.advance();
-                self.members(group_access, item, out)?;
-                self.expect(TokenKind::Punct(Punct::RBrace))?;
-                continue;
-            }
-            let line = self.line();
-            let modifiers = self.modifiers(access);
-            out.extend(item(self, modifiers, line)?);
+            self.member(access, item, out)?;
         }
+        Ok(())
+    }
+
+    /// One declaration, or one `private { ... }` / `public { ... }` group.
+    fn member<M>(
+        &mut self,
+        access: Access,
+        item: fn(&mut Self, Modifiers, usize) -> PResult<Vec<M>>,
+        out: &mut Vec<M>,
+    ) -> PResult<()> {
+        let group_access = match (self.peek_kind(), self.ts.nth_kind(1)) {
+            (TokenKind::Keyword(Kw::Private), TokenKind::Punct(Punct::LBrace)) => Some(Access::Private),
+            (TokenKind::Keyword(Kw::Public), TokenKind::Punct(Punct::LBrace)) => Some(Access::Public),
+            _ => None,
+        };
+        if let Some(group_access) = group_access {
+            self.ts.advance();
+            self.ts.advance();
+            self.members(group_access, item, out)?;
+            self.expect(TokenKind::Punct(Punct::RBrace))?;
+            return Ok(());
+        }
+        let line = self.line();
+        let modifiers = self.modifiers(access);
+        out.extend(item(self, modifiers, line)?);
         Ok(())
     }
 

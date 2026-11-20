@@ -9,7 +9,6 @@ pub const SPEC: LexSpec = LexSpec {
     line_comment: "//",
     block_comment: Some(("/*", "*/")),
     rawcodes: true,
-    embeds: &[],
     puncts: &[
         Punct::Plus,
         Punct::Minus,
@@ -41,6 +40,7 @@ pub const SPEC: LexSpec = LexSpec {
         Punct::Semicolon,
         Punct::Dot,
     ],
+    ..LexSpec::BASE
 };
 
 pub struct Lexer;

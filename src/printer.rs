@@ -3,11 +3,17 @@ pub use parser_rs::Node;
 
 /// Builds a visualizable tree out of a parsed program.
 pub fn build_tree(program: &Program) -> Node {
-    Node::with_children(
-        "Program",
-        program.libraries.iter().map(library_node).collect(),
-    )
-    .tag("root", None)
+    // Libraries, global-scope declarations and misplaced statements, back
+    // in source order.
+    let mut items: Vec<(usize, Node)> = program
+        .libraries
+        .iter()
+        .map(|l| (l.line, library_node(l)))
+        .chain(program.globals.iter().map(|m| (m.line(), member_node(m))))
+        .chain(program.stmts.iter().map(|s| (s.line(), stmt_node(s))))
+        .collect();
+    items.sort_by_key(|(line, _)| *line);
+    Node::with_children("Program", items.into_iter().map(|(_, n)| n).collect()).tag("root", None)
 }
 
 /// Renders the program's AST as an indented tree.

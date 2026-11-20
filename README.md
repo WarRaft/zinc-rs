@@ -58,7 +58,9 @@ true false null`.
 
 ### Libraries
 
-Everything lives inside a library. There is no code at file level.
+In original Zinc, everything lives inside a library and there is no code
+at file level. This toolchain also accepts a global scope (see
+[below](#global-scope-an-extension)).
 
 ```zinc
 library Damage requires Utils, optional TimerUtils {   // also: needs / uses
@@ -80,6 +82,43 @@ library Damage requires Utils, optional TimerUtils {   // also: needs / uses
 
 - A library function named `onInit` runs automatically at map
   initialization.
+
+#### Global scope (an extension)
+
+Original Zinc puts every variable and function in a library. This
+toolchain also makes the **global scope** available. Outside any library
+the file is read like one more library body, mixed freely with
+libraries:
+
+```zinc
+integer counter = 0;                 // a plain global
+constant real PI = 3.14159;
+
+library Ticker {
+    function onInit() { Tick(); }
+}
+
+function Tick() { counter += 1; }    // a global function
+struct Point { real x, y; }          // structs, interfaces, modules, types too
+```
+
+- **Same declarations as a library body:** variables, functions,
+  structs, interfaces, modules and `type`s, with the same syntax. Names
+  are checked for duplicates across the global scope.
+- **No access modifiers.** `private` / `public` have no library to apply
+  to, so they get a warning ("has no effect outside a library").
+- **Statements are recognized, then rejected.** `if`, `while`, `for`,
+  `do … while`, assignments, calls, `return`, `break`, `debug`,
+  `static if` and blocks are parsed and highlighted in full, so the rest
+  of the file is unaffected. Lint then reports an error asking to move
+  the statement into a function. This works the same way as
+  [JASS at the top level](../jass-rs/README.md#what-this-toolchain-accepts-at-the-top-level).
+
+  ```zinc
+  counter = 2;      // error: assignment outside a function: move it into a function
+  ```
+
+All of this applies inside vJASS's `//! zinc` blocks too.
 
 ### Variables
 
@@ -231,15 +270,41 @@ Supported: everything in the reference above. The parser:
 - accepts modifiers syntactically but doesn't check where they're allowed
   (e.g. `readonly` on a library global);
 - doesn't yet support `$1F` hex or `1.` / `.5` reals (same as `jass-rs`);
-- does no symbol or type resolution: unknown names, wrong argument types
-  and visibility violations aren't reported.
+- doesn't check names or types: unknown names, wrong argument types and
+  visibility violations aren't reported (the symbols below feed the
+  editor's index, not lint).
 
-Lint rules: duplicate libraries, library members, struct members and
-locals (including locals that shadow parameters), and `break` outside a
-loop are errors. Unused locals, `while (true)` / `do … while (true)`
+Every lint diagnostic names its rule. The rule ids, which rules are on
+by default (`infinite-loop` isn't) and how a project switches them
+(`[lint]` in `wc3.bni`) are in the [`wc3-rs` README](../wc3-rs/README.md#lint).
+
+Lint rules: duplicate libraries, library members, global-scope
+declarations, struct members and locals (including locals that shadow
+parameters), `break` outside a loop, and statements outside a function
+are errors. `private` / `public` in the global scope is a warning. Unused locals, `while (true)` / `do … while (true)`
 without `break`/`return`, empty `if`/`else` bodies, and a missing `return`
 in a function that declares `-> type` are warnings. Anonymous functions
 are checked as functions of their own.
+
+**Symbols** (`symbols`, `semantic_tokens_and_symbols_at`): every name as a
+`parser_rs::Occurrence`, recorded by the semantic-token classifier in the
+same pass, so it works on half-typed code and agrees with the
+highlighting.
+
+| names                                                        | scope |
+|--------------------------------------------------------------|-------|
+| library names (declared, and in `requires`)                  | project |
+| library members (functions, variables, structs, interfaces, modules, types) | **private by default**: their library (`Local(n)`); `public`, alone or as a `public { }` group, makes them project-wide |
+| anything declared outside a library                          | project |
+| struct fields and methods, and any name after `.`            | `Member`: matched by name, since `obj.x` can't be tied to a type without type inference |
+| parameters and locals (anonymous functions too)              | their function (`Local(n)`) |
+
+A library's private member can be used before its declaration: a
+reference made inside the library is resolved to it after the whole file
+is read. Local scopes are numbered per file from `first_scope`, so Zinc
+embedded in vJASS doesn't collide with the host file's functions (the
+returned next number continues the host's count). Primitives and the
+`array` of `extends array` aren't symbols.
 
 ## CLI
 

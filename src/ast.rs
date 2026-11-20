@@ -2,11 +2,18 @@
 /// (a sibling checkout, pulled in as a path dependency).
 pub use parser_rs::{ColumnEncoding, Span};
 
-/// A Zinc source file: a sequence of libraries (Zinc has no code outside
-/// of them).
-#[derive(Debug, Clone, PartialEq)]
+/// A Zinc source file. In original Zinc everything lives in libraries;
+/// this toolchain also accepts a **global scope**: declarations outside
+/// any library. Statements outside a function are parsed too, so the rest
+/// of the file still parses, and lint reports them as errors.
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Program {
     pub libraries: Vec<Library>,
+    /// Declarations outside any library (variables, functions, structs,
+    /// ...), as if in a library body.
+    pub globals: Vec<Member>,
+    /// Statements outside any function: an error, reported by lint.
+    pub stmts: Vec<Stmt>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -62,6 +69,19 @@ pub enum Member {
         size: Option<Expr>,
         line: usize,
     },
+}
+
+impl Member {
+    /// The line the declaration starts on.
+    pub fn line(&self) -> usize {
+        match self {
+            Member::Var(d) => d.line,
+            Member::Function(f) => f.sig.line,
+            Member::Struct(s) => s.line,
+            Member::Interface(t) | Member::Module(t) => t.line,
+            Member::TypeDef { line, .. } => *line,
+        }
+    }
 }
 
 /// A variable declaration: a global, a struct field, or a local. Zinc's

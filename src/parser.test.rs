@@ -211,8 +211,9 @@ fn reports_errors_at_the_offending_token() {
     let err = Parser::parse_str("library L {\n  function F() { x = ; }\n}").unwrap_err();
     assert_eq!((err.line, err.col, err.end_col), (2, 22, 23));
 
-    let err = Parser::parse_str("function F() {}").unwrap_err();
-    assert!(err.message.contains("expected 'library'"));
+    // Outside a library: a statement position, so the same message.
+    let err = Parser::parse_str("x;").unwrap_err();
+    assert!(err.message.contains("assignment or a call"));
 
     let err = Parser::parse_str("library L { function F() { x; } }").unwrap_err();
     assert!(err.message.contains("assignment or a call"));
@@ -222,4 +223,30 @@ fn reports_errors_at_the_offending_token() {
 
     let err = Parser::parse_str("library L { function F() {").unwrap_err();
     assert!(err.message.contains("unexpected end of file"));
+}
+
+#[test]
+fn parses_the_global_scope() {
+    let src = "integer counter = 0;\nlibrary L { integer x; }\nfunction Tick() { counter += 1; }\nprivate { struct S { integer f; } }\nconstant real PI = 3.14;";
+    let prog = Parser::parse_str(src).unwrap();
+    assert_eq!(prog.libraries.len(), 1);
+    let globals: Vec<(usize, bool)> = prog
+        .globals
+        .iter()
+        .map(|m| (m.line(), matches!(m, Member::Var(d) if d.modifiers.is_constant)))
+        .collect();
+    assert_eq!(globals, [(1, false), (3, false), (4, false), (5, true)]);
+    assert!(matches!(&prog.globals[2], Member::Struct(s) if s.modifiers.access == Access::Private));
+    assert!(prog.stmts.is_empty());
+}
+
+#[test]
+fn reads_statements_outside_functions_in_full() {
+    let src = "if (x > 0) { f(); } else { g(); }\ncounter = 1;\nstatic if (DEBUG) { h(); }\nfor (0 <= i < 3) { f(); }\nlibrary L {}";
+    let prog = Parser::parse_str(src).unwrap();
+    let lines: Vec<usize> = prog.stmts.iter().map(Stmt::line).collect();
+    assert_eq!(lines, [1, 2, 3, 4]);
+    assert!(matches!(&prog.stmts[0], Stmt::If { else_body: Some(_), .. }));
+    assert!(matches!(&prog.stmts[2], Stmt::If { is_static: true, .. }));
+    assert_eq!(prog.libraries.len(), 1);
 }

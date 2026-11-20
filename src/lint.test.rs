@@ -94,3 +94,30 @@ fn diagnostics_are_sorted_by_line() {
     let lines: Vec<usize> = d.iter().map(|d| d.line).collect();
     assert_eq!(lines, vec![2, 3]);
 }
+
+#[test]
+fn global_scope_is_linted_like_a_library_body() {
+    let d = lint_src("integer x;\nreal x;\nfunction F() { integer unused; }\nprivate integer y;");
+    assert!(has(&d, Level::Error, "duplicate global 'x' (first declared at line 1)"), "{d:?}");
+    assert!(has(&d, Level::Warning, "unused local variable 'unused'"), "{d:?}");
+    assert!(has(&d, Level::Warning, "'private' has no effect outside a library"), "{d:?}");
+}
+
+#[test]
+fn asks_to_move_statements_outside_functions_into_one() {
+    let d = lint_src("if (true) { f(); }\nx = 1;\nf();\nwhile (true) { break; }");
+    let errors: Vec<(usize, &str)> = d
+        .iter()
+        .filter(|d| d.level == Level::Error)
+        .map(|d| (d.line, d.message.as_str()))
+        .collect();
+    assert_eq!(
+        errors,
+        [
+            (1, "'if' statement outside a function: move it into a function"),
+            (2, "assignment outside a function: move it into a function"),
+            (3, "call outside a function: move it into a function"),
+            (4, "'while' loop outside a function: move it into a function"),
+        ]
+    );
+}

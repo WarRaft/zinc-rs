@@ -20,7 +20,9 @@ pub use lint::{lint, Diagnostic, Level};
 pub use parser::{ParseError, Parser};
 pub use printer::{render_dot, render_tree};
 pub use query::{find_node_at, find_node_in, AstRef};
-pub use semantic::{encoded_semantic_tokens, semantic_tokens, semantic_tokens_at};
+pub use semantic::{
+    encoded_semantic_tokens, semantic_tokens, semantic_tokens_and_symbols_at, semantic_tokens_at, symbols,
+};
 
 /// Parses Zinc source into an AST.
 pub fn parse(src: &str) -> Result<Program, ParseError> {

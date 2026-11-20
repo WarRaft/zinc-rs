@@ -78,12 +78,17 @@ pub fn find_node_in(
         sc: start_col,
         ec: end_col,
     };
-    program.libraries.iter().find_map(|lib| {
-        lib.members
-            .iter()
-            .find_map(|m| in_member(m, q))
-            .or_else(|| q.hit(AstRef::Library(lib)))
-    })
+    program
+        .libraries
+        .iter()
+        .find_map(|lib| {
+            lib.members
+                .iter()
+                .find_map(|m| in_member(m, q))
+                .or_else(|| q.hit(AstRef::Library(lib)))
+        })
+        .or_else(|| program.globals.iter().find_map(|m| in_member(m, q)))
+        .or_else(|| program.stmts.iter().find_map(|s| in_stmt(s, q)))
 }
 
 /// Finds the most specific AST node at a single position.

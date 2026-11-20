@@ -2,6 +2,7 @@ use crate::ast::*;
 use std::collections::{HashMap, HashSet};
 
 pub use parser_rs::{Diagnostic, Level};
+use parser_rs::rule;
 
 /// Runs every lint rule over a parsed program and returns the diagnostics
 /// found, sorted by source line.
@@ -15,13 +16,33 @@ pub fn lint(program: &Program) -> Vec<Diagnostic> {
     );
 
     let mut functions = Vec::new();
+    // The global scope is checked like one more library body.
+    check_duplicates("global", program.globals.iter().filter_map(member_name), &mut diags);
+    for m in &program.globals {
+        if let Some(word) = library_only_access(m) {
+            diags.push(Diagnostic::warning(rule::MODIFIER_OUTSIDE_LIBRARY, 
+                format!("'{word}' has no effect outside a library"),
+                m.line(),
+            ));
+        }
+    }
+    for s in &program.stmts {
+        diags.push(Diagnostic::error(rule::STATEMENT_OUTSIDE_FUNCTION, top_level_stmt_message(s), s.line()));
+    }
+    let bodies = program
+        .libraries
+        .iter()
+        .map(|lib| lib.members.as_slice())
+        .chain(std::iter::once(program.globals.as_slice()));
     for lib in &program.libraries {
         check_duplicates(
             "library member",
             lib.members.iter().filter_map(member_name),
             &mut diags,
         );
-        for m in &lib.members {
+    }
+    for members in bodies {
+        for m in members {
             match m {
                 Member::Function(f) => functions.push(f),
                 Member::Var(d) => collect_anon_functions_in(d.exprs(), &mut functions),
@@ -42,6 +63,42 @@ pub fn lint(program: &Program) -> Vec<Diagnostic> {
 
     diags.sort_by_key(|d| d.line);
     diags
+}
+
+/// `private` / `public` on a global-scope declaration, which has no
+/// library to be private or public in.
+fn library_only_access(m: &Member) -> Option<&'static str> {
+    let access = match m {
+        Member::Var(d) => d.modifiers.access,
+        Member::Function(f) => f.sig.modifiers.access,
+        Member::Struct(s) => s.modifiers.access,
+        Member::Interface(t) | Member::Module(t) => t.modifiers.access,
+        Member::TypeDef { modifiers, .. } => modifiers.access,
+    };
+    match access {
+        Access::Private => Some("private"),
+        Access::Public => Some("public"),
+        Access::Default => None,
+    }
+}
+
+/// Why a statement can't stand outside a function.
+fn top_level_stmt_message(s: &Stmt) -> String {
+    let what = match s {
+        Stmt::Local(_) => unreachable!("a declaration outside a function is a global"),
+        Stmt::Assign { .. } => "assignment",
+        Stmt::Expr { .. } => "call",
+        Stmt::If { is_static: true, .. } => "'static if'",
+        Stmt::If { .. } => "'if' statement",
+        Stmt::While { .. } => "'while' loop",
+        Stmt::DoWhile { .. } => "'do ... while' loop",
+        Stmt::For { .. } => "'for' loop",
+        Stmt::Break { .. } => "'break'",
+        Stmt::Return { .. } => "'return'",
+        Stmt::Debug { .. } => "'debug' statement",
+        Stmt::Block { .. } => "block",
+    };
+    format!("{what} outside a function: move it into a function")
 }
 
 fn member_name(m: &Member) -> Option<(&str, usize)> {
@@ -85,7 +142,7 @@ fn check_duplicates<'a>(
     let mut seen: HashMap<&str, usize> = HashMap::new();
     for (name, line) in names {
         match seen.get(name) {
-            Some(&first) => diags.push(Diagnostic::error(
+            Some(&first) => diags.push(Diagnostic::error(rule::DUPLICATE_DECLARATION, 
                 format!("duplicate {what} '{name}' (first declared at line {first})"),
                 line,
             )),
@@ -118,7 +175,7 @@ fn check_function<'a>(
 
     for local in locals {
         if let Some(&first) = seen.get(local.name.as_str()) {
-            diags.push(Diagnostic::error(
+            diags.push(Diagnostic::error(rule::DUPLICATE_DECLARATION, 
                 format!(
                     "duplicate local variable '{}' (first declared at line {first})",
                     local.name
@@ -128,7 +185,7 @@ fn check_function<'a>(
         } else {
             seen.insert(&local.name, local.line);
             if !used.contains(local.name.as_str()) {
-                diags.push(Diagnostic::warning(
+                diags.push(Diagnostic::warning(rule::UNUSED_LOCAL, 
                     format!("unused local variable '{}'", local.name),
                     local.line,
                 ));
@@ -144,7 +201,7 @@ fn check_function<'a>(
         } else {
             format!("function '{}'", f.sig.name)
         };
-        diags.push(Diagnostic::warning(
+        diags.push(Diagnostic::warning(rule::MISSING_RETURN, 
             format!("{name} declares a return type but has no 'return' statement"),
             f.sig.line,
         ));
@@ -173,7 +230,7 @@ fn check_stmts<'a>(
         match s {
             Stmt::While { cond, body, line } | Stmt::DoWhile { body, cond, line } => {
                 if matches!(cond.kind, ExprKind::BoolLiteral(true)) && !exits_loop(body) {
-                    diags.push(Diagnostic::warning(
+                    diags.push(Diagnostic::warning(rule::INFINITE_LOOP, 
                         "loop condition is always true and the body has no 'break' or 'return'",
                         *line,
                     ));
@@ -186,14 +243,14 @@ fn check_stmts<'a>(
                 ..
             } => {
                 if then_body.is_empty() {
-                    diags.push(Diagnostic::warning("empty 'if' body", *line));
+                    diags.push(Diagnostic::warning(rule::EMPTY_BRANCH, "empty 'if' body", *line));
                 }
                 if else_body.as_ref().is_some_and(|b| b.is_empty()) {
-                    diags.push(Diagnostic::warning("empty 'else' body", *line));
+                    diags.push(Diagnostic::warning(rule::EMPTY_BRANCH, "empty 'else' body", *line));
                 }
             }
             Stmt::Break { line } if !in_loop => {
-                diags.push(Diagnostic::error("'break' outside of a loop", *line));
+                diags.push(Diagnostic::error(rule::BREAK_OUTSIDE_LOOP, "'break' outside of a loop", *line));
             }
             _ => {}
         }
